@@ -95,10 +95,9 @@ h1 {
     padding: 8px 16px;
     border-radius: 4px;
     cursor: pointer;
-    margin: 10px 0;
-    font-size: 14px;
+    margin: 10px auto;
     display: block;
-    margin: 15px auto;
+    font-size: 14px;
 }
 
 .refresh-button:hover {
