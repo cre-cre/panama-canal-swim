@@ -2,11 +2,10 @@
 const SHEET_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRv_tosp8If0B4UTn4jW9IPXrPF-ocF-9obdnn1D12_LDNvb23Dz56yZ9xZ43Wuj9azhc7SxcrLcOMX/pub?gid=0&single=true&output=csv';
 const CHARLES_COLOR = '#FF7000';
 const HUGH_COLOR = '#568203';
-const ROUTE_OFFSET = 0.0008; // Offset for parallel lines
+const ROUTE_OFFSET = 0.001;
 
 // Canal milestones with verified coordinates
 const canalMilestones = [
-    // Atlantic Entrance
     { point: [9.359167, -79.915833], mile: 0, name: "Atlantic Start", description: "Cristobal entrance" },
     { point: [9.314444, -79.916389], mile: 4, name: "Gatun Approach", description: "Channel to locks" },
     { point: [9.273926, -79.922788], mile: 8, name: "Gatun Locks", description: "Triple flight of locks" },
@@ -27,8 +26,6 @@ const canalMilestones = [
 
 // Initialize map and layers
 const map = L.map('map').setView([9.1174, -79.8248], 9);
-let swimLayers = L.layerGroup().addTo(map);
-let routeLayers = L.layerGroup().addTo(map);
 
 // Add map layer
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -59,18 +56,6 @@ canalMilestones.forEach(milestone => {
     .addTo(map);
 });
 
-// Helper function to offset points for parallel lines
-function offsetPoint(point, offset) {
-    // Calculate perpendicular offset
-    const bearing = 45; // Angle in degrees for offset direction
-    const rad = bearing * Math.PI / 180;
-    return [
-        point[0] + offset * Math.cos(rad),
-        point[1] + offset * Math.sin(rad)
-    ];
-}
-
-// Update function
 function updateMap() {
     const refreshButton = document.querySelector('.refresh-button');
     if (refreshButton) {
@@ -87,99 +72,98 @@ function updateMap() {
                 refreshButton.disabled = false;
                 refreshButton.textContent = 'Refresh Data';
             }
-        })
-        .catch(error => {
-            console.error('Error fetching data:', error);
-            if (refreshButton) {
-                refreshButton.disabled = false;
-                refreshButton.textContent = 'Refresh Data';
-            }
         });
 }
 
-// Process swimmer data
 function processSwimmerData(rows) {
-    // Clear existing layers
-    swimLayers.clearLayers();
-    routeLayers.clearLayers();
+    const dataRows = rows.slice(1).filter(row => row.length > 1);
     
-    // Skip header row
-    const dataRows = rows.slice(1);
+    map.eachLayer((layer) => {
+        if (layer instanceof L.Polyline && layer !== baseRoute) {
+            map.removeLayer(layer);
+        }
+        if (layer instanceof L.CircleMarker) {
+            map.removeLayer(layer);
+        }
+    });
     
-    // Process each swimmer's data
     const charlesData = dataRows.filter(row => row[1].trim().toLowerCase() === 'charles');
     const hughData = dataRows.filter(row => row[1].trim().toLowerCase() === 'hugh');
     
     const charlesMiles = calculateTotalMiles(charlesData);
     const hughMiles = calculateTotalMiles(hughData);
     
-    // Update routes with offsets
     updateSwimmerProgress('Charles', charlesData, charlesMiles, CHARLES_COLOR, ROUTE_OFFSET);
     updateSwimmerProgress('Hugh', hughData, hughMiles, HUGH_COLOR, -ROUTE_OFFSET);
     
     updateStats(charlesMiles, hughMiles);
 }
 
-// Calculate total miles
 function calculateTotalMiles(swimmerData) {
     return swimmerData.reduce((total, row) => total + parseFloat(row[3] || 0), 0);
 }
 
-// Update swimmer progress
 function updateSwimmerProgress(name, swimData, totalMiles, color, offset) {
-    // Draw progress line
-    const progressRoute = canalMilestones
+    const progressPoints = canalMilestones
         .filter(m => m.mile <= totalMiles)
-        .map(m => offsetPoint(m.point, offset));
-    
-    L.polyline(progressRoute, {
+        .map(m => {
+            const original = m.point;
+            return [
+                original[0] + offset,
+                original[1]
+            ];
+        });
+
+    L.polyline(progressPoints, {
         color: color,
         weight: 4,
         opacity: 0.8
-    }).addTo(routeLayers);
+    }).addTo(map);
 
-    // Add individual swim points
     swimData.forEach(row => {
         const miles = parseFloat(row[3]);
-        const date = new Date(row[0]).toLocaleDateString();
-        const comment = row[5] || '';
-        const stravaLink = row[6] || '';
+        const dateStr = row[0];
+        const date = new Date(dateStr);
+        const formattedDate = date.toLocaleDateString('en-US', {
+            year: 'numeric',
+            month: 'short',
+            day: 'numeric'
+        });
         
-        // Calculate position for this swim
+        const comment = row[5] ? row[5].trim() : '';
+        const stravaLink = row[6] ? row[6].trim() : '';
+        
         const milestone = canalMilestones.find(m => m.mile > miles);
         const prevMilestone = canalMilestones[canalMilestones.indexOf(milestone) - 1];
-        
+
         if (prevMilestone && milestone) {
             const progress = (miles - prevMilestone.mile) / (milestone.mile - prevMilestone.mile);
             const position = [
-                prevMilestone.point[0] + (milestone.point[0] - prevMilestone.point[0]) * progress,
+                prevMilestone.point[0] + (milestone.point[0] - prevMilestone.point[0]) * progress + offset,
                 prevMilestone.point[1] + (milestone.point[1] - prevMilestone.point[1]) * progress
             ];
-            
-            // Offset the position
-            const offsetPosition = offsetPoint(position, offset);
-            
-            // Add marker
-            L.circleMarker(offsetPosition, {
+
+            const popupContent = `
+                <div class="swim-popup">
+                    <strong>${name} - ${formattedDate}</strong>
+                    <p>Distance: ${miles.toFixed(2)} miles</p>
+                    ${comment ? `<p>Comment: ${comment}</p>` : ''}
+                    ${stravaLink ? `<p><a href="${stravaLink}" target="_blank">View on Strava</a></p>` : ''}
+                </div>
+            `;
+
+            L.circleMarker(position, {
                 radius: 4,
                 color: color,
                 fillColor: color,
                 fillOpacity: 0.8
             })
-            .bindPopup(`
-                <div class="swim-popup">
-                    <strong>${name} - ${date}</strong>
-                    <p>Distance: ${miles.toFixed(2)} miles</p>
-                    ${comment ? `<p>Comment: ${comment}</p>` : ''}
-                    ${stravaLink ? `<p><a href="${stravaLink}" target="_blank">View on Strava</a></p>` : ''}
-                </div>
-            `)
-            .addTo(swimLayers);
+            .bindPopup(popupContent)
+            .addTo(map);
         }
     });
 }
 
-// Update stats display
 function updateStats(charlesMiles, hughMiles) {
     const statsPanel = document.getElementById('statsPanel');
     statsPanel.innerHTML = `
