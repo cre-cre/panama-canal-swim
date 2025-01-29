@@ -1,0 +1,103 @@
+/* Base Container */
+.container {
+    max-width: 1200px;
+    margin: 0 auto;
+    font-family: Arial, sans-serif;
+    padding: 20px;
+}
+
+/* Map Styling */
+#map { 
+    height: 500px; 
+    width: 100%;
+    border-radius: 8px;
+    margin-bottom: 20px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+/* Stats Panel */
+.stats-panel {
+    background: white;
+    padding: 20px;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+/* Swimmer Cards */
+.swimmer-card {
+    padding: 15px;
+    margin: 10px 0;
+    background: #f8f9fa;
+    border-radius: 8px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+/* Progress Bar */
+.progress-bar {
+    height: 10px;
+    background: #eee;
+    border-radius: 5px;
+    margin: 10px 0;
+    overflow: hidden;
+}
+
+.progress-fill {
+    height: 100%;
+    transition: width 0.5s ease-in-out;
+}
+
+/* Milestone Markers */
+.milestone-marker {
+    background: transparent;
+}
+
+.milestone-point {
+    width: 12px;
+    height: 12px;
+    background: #ffeb3b;
+    border: 2px solid #000;
+    border-radius: 50%;
+}
+
+/* Refresh Button */
+.refresh-button {
+    background: #4CAF50;
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 4px;
+    cursor: pointer;
+    margin: 10px 0;
+    font-size: 14px;
+}
+
+.refresh-button:hover {
+    background: #45a049;
+}
+
+.refresh-button:disabled {
+    background: #cccccc;
+    cursor: not-allowed;
+}
+
+/* Update Time */
+.update-time {
+    color: #666;
+    font-size: 12px;
+    margin-top: 10px;
+}
+
+/* Mobile Responsive */
+@media (max-width: 768px) {
+    .container {
+        padding: 10px;
+    }
+    
+    #map {
+        height: 400px;
+    }
+    
+    .stats-panel {
+        padding: 15px;
+    }
+}
