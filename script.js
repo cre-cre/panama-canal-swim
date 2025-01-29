@@ -2,6 +2,7 @@
 const SHEET_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRv_tosp8If0B4UTn4jW9IPXrPF-ocF-9obdnn1D12_LDNvb23Dz56yZ9xZ43Wuj9azhc7SxcrLcOMX/pub?gid=0&single=true&output=csv';
 const CHARLES_COLOR = '#FF7000';
 const HUGH_COLOR = '#568203';
+const ROUTE_OFFSET = 0.0008; // Offset for parallel lines
 
 // Canal milestones with verified coordinates
 const canalMilestones = [
@@ -24,8 +25,10 @@ const canalMilestones = [
     { point: [8.934247, -79.558209], mile: 50, name: "Pacific Entrance", description: "Pacific Entrance" }
 ];
 
-// Initialize map
+// Initialize map and layers
 const map = L.map('map').setView([9.1174, -79.8248], 9);
+let swimLayers = L.layerGroup().addTo(map);
+let routeLayers = L.layerGroup().addTo(map);
 
 // Add map layer
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -36,7 +39,7 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
 const routePoints = canalMilestones.map(m => m.point);
 const baseRoute = L.polyline(routePoints, {
     color: 'gray',
-    weight: 2,
+    weight: 3,
     opacity: 0.5
 }).addTo(map);
 
@@ -56,50 +59,64 @@ canalMilestones.forEach(milestone => {
     .addTo(map);
 });
 
-// Create refresh button
-const statsPanel = document.getElementById('statsPanel');
-const refreshButton = document.createElement('button');
-refreshButton.className = 'refresh-button';
-refreshButton.textContent = 'Refresh Data';
-refreshButton.onclick = updateMap;
-statsPanel.appendChild(refreshButton);
+// Helper function to offset points for parallel lines
+function offsetPoint(point, offset) {
+    // Calculate perpendicular offset
+    const bearing = 45; // Angle in degrees for offset direction
+    const rad = bearing * Math.PI / 180;
+    return [
+        point[0] + offset * Math.cos(rad),
+        point[1] + offset * Math.sin(rad)
+    ];
+}
 
 // Update function
 function updateMap() {
-    refreshButton.disabled = true;
-    refreshButton.textContent = 'Refreshing...';
+    const refreshButton = document.querySelector('.refresh-button');
+    if (refreshButton) {
+        refreshButton.disabled = true;
+        refreshButton.textContent = 'Refreshing...';
+    }
 
     fetch(SHEET_URL)
         .then(response => response.text())
         .then(data => {
             const rows = data.split('\n').map(row => row.split(','));
             processSwimmerData(rows);
-            refreshButton.disabled = false;
-            refreshButton.textContent = 'Refresh Data';
+            if (refreshButton) {
+                refreshButton.disabled = false;
+                refreshButton.textContent = 'Refresh Data';
+            }
         })
         .catch(error => {
             console.error('Error fetching data:', error);
-            refreshButton.disabled = false;
-            refreshButton.textContent = 'Refresh Data';
+            if (refreshButton) {
+                refreshButton.disabled = false;
+                refreshButton.textContent = 'Refresh Data';
+            }
         });
 }
 
 // Process swimmer data
 function processSwimmerData(rows) {
+    // Clear existing layers
+    swimLayers.clearLayers();
+    routeLayers.clearLayers();
+    
     // Skip header row
     const dataRows = rows.slice(1);
     
-    // Get swimmer data
+    // Process each swimmer's data
     const charlesData = dataRows.filter(row => row[1].trim().toLowerCase() === 'charles');
     const hughData = dataRows.filter(row => row[1].trim().toLowerCase() === 'hugh');
     
-    // Calculate progress
     const charlesMiles = calculateTotalMiles(charlesData);
     const hughMiles = calculateTotalMiles(hughData);
     
-    // Update display
-    updateSwimmerProgress('Charles', charlesMiles, CHARLES_COLOR);
-    updateSwimmerProgress('Hugh', hughMiles, HUGH_COLOR);
+    // Update routes with offsets
+    updateSwimmerProgress('Charles', charlesData, charlesMiles, CHARLES_COLOR, ROUTE_OFFSET);
+    updateSwimmerProgress('Hugh', hughData, hughMiles, HUGH_COLOR, -ROUTE_OFFSET);
+    
     updateStats(charlesMiles, hughMiles);
 }
 
@@ -108,65 +125,64 @@ function calculateTotalMiles(swimmerData) {
     return swimmerData.reduce((total, row) => total + parseFloat(row[3] || 0), 0);
 }
 
-// Update swimmer progress on map
-function updateSwimmerProgress(name, miles, color) {
-    const progress = miles / 50;
-    const position = calculatePosition(progress);
-    
+// Update swimmer progress
+function updateSwimmerProgress(name, swimData, totalMiles, color, offset) {
     // Draw progress line
     const progressRoute = canalMilestones
-        .filter(m => m.mile <= miles)
-        .map(m => m.point);
-    
-    if (position) progressRoute.push(position);
+        .filter(m => m.mile <= totalMiles)
+        .map(m => offsetPoint(m.point, offset));
     
     L.polyline(progressRoute, {
         color: color,
         weight: 4,
         opacity: 0.8
-    }).addTo(map);
+    }).addTo(routeLayers);
 
-    // Add current position marker
-    if (position) {
-        L.marker(position, {
-            icon: L.divIcon({
-                className: 'swimmer-marker',
-                html: `<div style="color:${color};font-size:24px;">●</div>`
-            })
-        })
-        .bindPopup(`${name}: ${miles.toFixed(2)} miles`)
-        .addTo(map);
-    }
-}
-
-// Calculate position along route
-function calculatePosition(progress) {
-    if (progress >= 1) return canalMilestones[canalMilestones.length - 1].point;
-    if (progress <= 0) return canalMilestones[0].point;
-    
-    const targetMile = progress * 50;
-    
-    for (let i = 0; i < canalMilestones.length - 1; i++) {
-        const currentMilestone = canalMilestones[i];
-        const nextMilestone = canalMilestones[i + 1];
+    // Add individual swim points
+    swimData.forEach(row => {
+        const miles = parseFloat(row[3]);
+        const date = new Date(row[0]).toLocaleDateString();
+        const comment = row[5] || '';
+        const stravaLink = row[6] || '';
         
-        if (targetMile >= currentMilestone.mile && targetMile <= nextMilestone.mile) {
-            const segmentProgress = (targetMile - currentMilestone.mile) / 
-                (nextMilestone.mile - currentMilestone.mile);
-            
-            return [
-                currentMilestone.point[0] + (nextMilestone.point[0] - currentMilestone.point[0]) * segmentProgress,
-                currentMilestone.point[1] + (nextMilestone.point[1] - currentMilestone.point[1]) * segmentProgress
+        // Calculate position for this swim
+        const milestone = canalMilestones.find(m => m.mile > miles);
+        const prevMilestone = canalMilestones[canalMilestones.indexOf(milestone) - 1];
+        
+        if (prevMilestone && milestone) {
+            const progress = (miles - prevMilestone.mile) / (milestone.mile - prevMilestone.mile);
+            const position = [
+                prevMilestone.point[0] + (milestone.point[0] - prevMilestone.point[0]) * progress,
+                prevMilestone.point[1] + (milestone.point[1] - prevMilestone.point[1]) * progress
             ];
+            
+            // Offset the position
+            const offsetPosition = offsetPoint(position, offset);
+            
+            // Add marker
+            L.circleMarker(offsetPosition, {
+                radius: 4,
+                color: color,
+                fillColor: color,
+                fillOpacity: 0.8
+            })
+            .bindPopup(`
+                <div class="swim-popup">
+                    <strong>${name} - ${date}</strong>
+                    <p>Distance: ${miles.toFixed(2)} miles</p>
+                    ${comment ? `<p>Comment: ${comment}</p>` : ''}
+                    ${stravaLink ? `<p><a href="${stravaLink}" target="_blank">View on Strava</a></p>` : ''}
+                </div>
+            `)
+            .addTo(swimLayers);
         }
-    }
-    return null;
+    });
 }
 
 // Update stats display
 function updateStats(charlesMiles, hughMiles) {
+    const statsPanel = document.getElementById('statsPanel');
     statsPanel.innerHTML = `
-        <h2>Panama Canal Swim Challenge</h2>
         <div class="swimmer-card">
             <h3 style="color:${CHARLES_COLOR}">Charles</h3>
             <div class="progress-bar">
