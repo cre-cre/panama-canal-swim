@@ -1,10 +1,10 @@
-// Constants
+// Configuration Constants
 const SHEET_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRv_tosp8If0B4UTn4jW9IPXrPF-ocF-9obdnn1D12_LDNvb23Dz56yZ9xZ43Wuj9azhc7SxcrLcOMX/pub?gid=0&single=true&output=csv';
 const CHARLES_COLOR = '#FF7000';
 const HUGH_COLOR = '#568203';
-const ROUTE_OFFSET = 0.001;
+const ROUTE_OFFSET = 0.002; // Offset distance for parallel lines
 
-// Canal milestones with verified coordinates
+// Canal route waypoints with verified coordinates and mile markers
 const canalMilestones = [
     { point: [9.359167, -79.915833], mile: 0, name: "Atlantic Start", description: "Cristobal entrance" },
     { point: [9.314444, -79.916389], mile: 4, name: "Gatun Approach", description: "Channel to locks" },
@@ -24,15 +24,15 @@ const canalMilestones = [
     { point: [8.934247, -79.558209], mile: 50, name: "Pacific Entrance", description: "Pacific Entrance" }
 ];
 
-// Initialize map and layers
+// Initialize map centered on the canal
 const map = L.map('map').setView([9.1174, -79.8248], 9);
 
-// Add map layer
+// Add OpenStreetMap base layer
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     attribution: '© OpenStreetMap contributors'
 }).addTo(map);
 
-// Draw base route
+// Draw the base canal route
 const routePoints = canalMilestones.map(m => m.point);
 const baseRoute = L.polyline(routePoints, {
     color: 'gray',
@@ -40,7 +40,7 @@ const baseRoute = L.polyline(routePoints, {
     opacity: 0.5
 }).addTo(map);
 
-// Add milestone markers
+// Add milestone markers along the route
 canalMilestones.forEach(milestone => {
     L.marker(milestone.point, {
         icon: L.divIcon({
@@ -56,6 +56,7 @@ canalMilestones.forEach(milestone => {
     .addTo(map);
 });
 
+// Function to update map data from Google Sheet
 function updateMap() {
     const refreshButton = document.querySelector('.refresh-button');
     if (refreshButton) {
@@ -75,9 +76,12 @@ function updateMap() {
         });
 }
 
+// Process data for both swimmers
 function processSwimmerData(rows) {
+    // Remove header row and empty rows
     const dataRows = rows.slice(1).filter(row => row.length > 1);
     
+    // Clear existing progress lines and markers
     map.eachLayer((layer) => {
         if (layer instanceof L.Polyline && layer !== baseRoute) {
             map.removeLayer(layer);
@@ -87,39 +91,45 @@ function processSwimmerData(rows) {
         }
     });
     
+    // Filter data for each swimmer
     const charlesData = dataRows.filter(row => row[1].trim().toLowerCase() === 'charles');
     const hughData = dataRows.filter(row => row[1].trim().toLowerCase() === 'hugh');
     
+    // Calculate total miles for each swimmer
     const charlesMiles = calculateTotalMiles(charlesData);
     const hughMiles = calculateTotalMiles(hughData);
     
+    // Update progress lines and markers for each swimmer
     updateSwimmerProgress('Charles', charlesData, charlesMiles, CHARLES_COLOR, ROUTE_OFFSET);
     updateSwimmerProgress('Hugh', hughData, hughMiles, HUGH_COLOR, -ROUTE_OFFSET);
     
+    // Update statistics panel
     updateStats(charlesMiles, hughMiles);
 }
 
+// Calculate total miles from swim data
 function calculateTotalMiles(swimmerData) {
     return swimmerData.reduce((total, row) => total + parseFloat(row[3] || 0), 0);
 }
 
+// Update individual swimmer's progress on map
 function updateSwimmerProgress(name, swimData, totalMiles, color, offset) {
+    // Create progress line points with offset
     const progressPoints = canalMilestones
         .filter(m => m.mile <= totalMiles)
-        .map(m => {
-            const original = m.point;
-            return [
-                original[0] + offset,
-                original[1]
-            ];
-        });
+        .map(m => ([
+            m.point[0],
+            m.point[1] + offset // Offset the longitude for parallel lines
+        ]));
 
+    // Draw the progress line
     L.polyline(progressPoints, {
         color: color,
         weight: 4,
         opacity: 0.8
     }).addTo(map);
 
+    // Add individual swim points
     swimData.forEach(row => {
         const miles = parseFloat(row[3]);
         const dateStr = row[0];
@@ -132,38 +142,42 @@ function updateSwimmerProgress(name, swimData, totalMiles, color, offset) {
         
         const comment = row[5] ? row[5].trim() : '';
         const stravaLink = row[6] ? row[6].trim() : '';
-        
-        const milestone = canalMilestones.find(m => m.mile > miles);
-        const prevMilestone = canalMilestones[canalMilestones.indexOf(milestone) - 1];
 
-        if (prevMilestone && milestone) {
-            const progress = (miles - prevMilestone.mile) / (milestone.mile - prevMilestone.mile);
-            const position = [
-                prevMilestone.point[0] + (milestone.point[0] - prevMilestone.point[0]) * progress + offset,
-                prevMilestone.point[1] + (milestone.point[1] - prevMilestone.point[1]) * progress
-            ];
+        // Find position along route for this swim
+        for (let i = 0; i < canalMilestones.length - 1; i++) {
+            const current = canalMilestones[i];
+            const next = canalMilestones[i + 1];
+            
+            if (miles >= current.mile && miles <= next.mile) {
+                const progress = (miles - current.mile) / (next.mile - current.mile);
+                const position = [
+                    current.point[0] + (next.point[0] - current.point[0]) * progress,
+                    current.point[1] + (next.point[1] - current.point[1]) * progress + offset
+                ];
 
-            const popupContent = `
-                <div class="swim-popup">
-                    <strong>${name} - ${formattedDate}</strong>
-                    <p>Distance: ${miles.toFixed(2)} miles</p>
-                    ${comment ? `<p>Comment: ${comment}</p>` : ''}
-                    ${stravaLink ? `<p><a href="${stravaLink}" target="_blank">View on Strava</a></p>` : ''}
-                </div>
-            `;
-
-            L.circleMarker(position, {
-                radius: 4,
-                color: color,
-                fillColor: color,
-                fillOpacity: 0.8
-            })
-            .bindPopup(popupContent)
-            .addTo(map);
+                // Add marker with popup
+                L.circleMarker(position, {
+                    radius: 4,
+                    color: color,
+                    fillColor: color,
+                    fillOpacity: 0.8
+                })
+                .bindPopup(`
+                    <div class="swim-popup">
+                        <strong>${name} - ${formattedDate}</strong>
+                        <p>Distance: ${miles.toFixed(2)} miles</p>
+                        ${comment ? `<p>Comment: ${comment}</p>` : ''}
+                        ${stravaLink ? `<p><a href="${stravaLink}" target="_blank">View on Strava</a></p>` : ''}
+                    </div>
+                `)
+                .addTo(map);
+                break;
+            }
         }
     });
 }
 
+// Update statistics panel
 function updateStats(charlesMiles, hughMiles) {
     const statsPanel = document.getElementById('statsPanel');
     statsPanel.innerHTML = `
