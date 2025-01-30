@@ -55,14 +55,18 @@ canalMilestones.forEach(milestone => {
     `)
     .addTo(map);
 });
-// Helper function to parse dates in dd/mm/yyyy format
+
+// Helper function to parse dates
 function parseDate(dateStr) {
     try {
+        console.log('Parsing date:', dateStr);
         // First, handle "Jan 29" format
         if (dateStr.includes(' ')) {
             const [month, day] = dateStr.split(' ');
             const monthNum = new Date(Date.parse(month + " 1, 2000")).getMonth() + 1;
-            return new Date(2025, monthNum - 1, parseInt(day, 10));
+            const date = new Date(2025, monthNum - 1, parseInt(day, 10));
+            console.log('Parsed date:', date);
+            return date;
         }
         // Handle dd/mm/yyyy format
         const [day, month, year] = dateStr.split('/').map(num => parseInt(num, 10));
@@ -75,6 +79,7 @@ function parseDate(dateStr) {
 
 // Function to update map data from Google Sheet
 function updateMap() {
+    console.log('Starting updateMap');
     const refreshButton = document.querySelector('.refresh-button');
     if (refreshButton) {
         refreshButton.disabled = true;
@@ -82,21 +87,46 @@ function updateMap() {
     }
 
     fetch(SHEET_URL)
-        .then(response => response.text())
+        .then(response => {
+            console.log('Fetch response:', response);
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            return response.text();
+        })
         .then(data => {
-            const rows = data.split('\n').map(row => row.split('\t')); // Changed to tab separator
+            console.log('Raw data received:', data.substring(0, 200) + '...'); // Log first 200 chars
+            const rows = data.split('\n')
+                .map(row => {
+                    const columns = row.split('\t');
+                    console.log('Processed row:', columns);
+                    return columns;
+                })
+                .filter(row => row.length > 1);
+            
+            console.log('Processed rows:', rows);
             processSwimmerData(rows);
+            
             if (refreshButton) {
                 refreshButton.disabled = false;
                 refreshButton.textContent = 'Refresh Data';
+            }
+        })
+        .catch(error => {
+            console.error('Error fetching or processing data:', error);
+            if (refreshButton) {
+                refreshButton.disabled = false;
+                refreshButton.textContent = 'Refresh Data (Error)';
             }
         });
 }
 
 // Process data for both swimmers
 function processSwimmerData(rows) {
+    console.log('Processing swimmer data - total rows:', rows.length);
     // Remove header row and empty rows
     const dataRows = rows.slice(1).filter(row => row.length > 1);
+    console.log('Data rows after filtering:', dataRows);
     
     // Clear existing progress lines and markers
     map.eachLayer((layer) => {
@@ -109,19 +139,25 @@ function processSwimmerData(rows) {
     });
     
     // Filter data for each swimmer
-    const charlesData = dataRows.filter(row => row[1].trim().toLowerCase() === 'charles');
-    const hughData = dataRows.filter(row => row[1].trim().toLowerCase() === 'hugh');
+    const charlesData = dataRows.filter(row => {
+        const isCharles = row[1] && row[1].trim().toLowerCase() === 'charles';
+        console.log('Row check for Charles:', row[1], isCharles);
+        return isCharles;
+    });
+    const hughData = dataRows.filter(row => {
+        const isHugh = row[1] && row[1].trim().toLowerCase() === 'hugh';
+        console.log('Row check for Hugh:', row[1], isHugh);
+        return isHugh;
+    });
+
+    console.log('Charles data:', charlesData);
+    console.log('Hugh data:', hughData);
     
     // Calculate total miles for each swimmer
     const charlesMiles = calculateTotalMiles(charlesData);
     const hughMiles = calculateTotalMiles(hughData);
     
-    console.log('Processing swimmer data:', {
-        charlesDataCount: charlesData.length,
-        hughDataCount: hughData.length,
-        charlesMiles,
-        hughMiles
-    });
+    console.log('Calculated miles:', { charles: charlesMiles, hugh: hughMiles });
     
     // Update progress lines and markers for each swimmer
     updateSwimmerProgress('Charles', charlesData, charlesMiles, CHARLES_COLOR, ROUTE_OFFSET);
@@ -133,10 +169,19 @@ function processSwimmerData(rows) {
 
 // Calculate total miles from swim data
 function calculateTotalMiles(swimmerData) {
-    return swimmerData.reduce((total, row) => total + parseFloat(row[3] || 0), 0);
+    const total = swimmerData.reduce((total, row) => {
+        const miles = parseFloat(row[3] || 0);
+        console.log('Adding miles:', miles);
+        return total + miles;
+    }, 0);
+    console.log('Total miles calculated:', total);
+    return total;
 }
+
 // Update individual swimmer's progress on map
 function updateSwimmerProgress(name, swimData, totalMiles, color, offset) {
+    console.log(`Updating progress for ${name}`, { swimData, totalMiles });
+    
     // Sort swim data by date first
     swimData.sort((a, b) => {
         const dateA = parseDate(a[0]);
@@ -158,6 +203,7 @@ function updateSwimmerProgress(name, swimData, totalMiles, color, offset) {
     swimData.forEach(row => {
         const miles = parseFloat(row[3]);
         cumulativeMiles += miles;
+        console.log(`Processing swim for ${name}:`, { miles, cumulativeMiles });
 
         // Find position along route for this cumulative distance
         for (let i = 0; i < canalMilestones.length - 1; i++) {
@@ -252,6 +298,7 @@ function updateSwimmerProgress(name, swimData, totalMiles, color, offset) {
         }
     });
 }
+
 // Update statistics panel
 function updateStats(charlesMiles, hughMiles) {
     const statsPanel = document.getElementById('statsPanel');
@@ -276,6 +323,7 @@ function updateStats(charlesMiles, hughMiles) {
 }
 
 // Initial load
+console.log('Starting initial load');
 updateMap();
 
 // Auto update every hour
