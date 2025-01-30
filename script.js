@@ -2,7 +2,7 @@
 const SHEET_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRv_tosp8If0B4UTn4jW9IPXrPF-ocF-9obdnn1D12_LDNvb23Dz56yZ9xZ43Wuj9azhc7SxcrLcOMX/pub?gid=0&single=true&output=csv';
 const CHARLES_COLOR = '#FF7000';
 const HUGH_COLOR = '#568203';
-const ROUTE_OFFSET = 0.002; // Offset distance for parallel lines
+const ROUTE_OFFSET = 0.005; // Increased offset for better visibility
 
 // Canal route waypoints with verified coordinates and mile markers
 const canalMilestones = [
@@ -55,18 +55,22 @@ canalMilestones.forEach(milestone => {
     `)
     .addTo(map);
 });
-
 // Helper function to parse dates in dd/mm/yyyy format
 function parseDate(dateStr) {
-    // First, handle "Jan 29" format
-    if (dateStr.includes(' ')) {
-        const [month, day] = dateStr.split(' ');
-        const monthNum = new Date(Date.parse(month + " 1, 2000")).getMonth() + 1;
-        return new Date(2025, monthNum - 1, parseInt(day));
+    try {
+        // First, handle "Jan 29" format
+        if (dateStr.includes(' ')) {
+            const [month, day] = dateStr.split(' ');
+            const monthNum = new Date(Date.parse(month + " 1, 2000")).getMonth() + 1;
+            return new Date(2025, monthNum - 1, parseInt(day, 10));
+        }
+        // Handle dd/mm/yyyy format
+        const [day, month, year] = dateStr.split('/').map(num => parseInt(num, 10));
+        return new Date(year, month - 1, day);
+    } catch (error) {
+        console.error('Error parsing date:', dateStr, error);
+        return new Date(); // Return current date as fallback
     }
-    // Handle dd/mm/yyyy format
-    const [day, month, year] = dateStr.split('/').map(num => parseInt(num, 10));
-    return new Date(year, month - 1, day);
 }
 
 // Function to update map data from Google Sheet
@@ -113,8 +117,8 @@ function processSwimmerData(rows) {
     const hughMiles = calculateTotalMiles(hughData);
     
     // Update progress lines and markers for each swimmer
-    updateSwimmerProgress('Charles', charlesData, charlesMiles, CHARLES_COLOR, ROUTE_OFFSET);
-    updateSwimmerProgress('Hugh', hughData, hughMiles, HUGH_COLOR, -ROUTE_OFFSET);
+    updateSwimmerProgress('Charles', charlesData, charlesMiles, CHARLES_COLOR, ROUTE_OFFSET); // East offset
+    updateSwimmerProgress('Hugh', hughData, hughMiles, HUGH_COLOR, -ROUTE_OFFSET); // West offset
     
     // Update statistics panel
     updateStats(charlesMiles, hughMiles);
@@ -124,33 +128,59 @@ function processSwimmerData(rows) {
 function calculateTotalMiles(swimmerData) {
     return swimmerData.reduce((total, row) => total + parseFloat(row[3] || 0), 0);
 }
-
 // Update individual swimmer's progress on map
 function updateSwimmerProgress(name, swimData, totalMiles, color, offset) {
-    // Draw the progress line
-    const progressPoints = canalMilestones
-        .filter(m => m.mile <= totalMiles)
-        .map(m => ([
-            m.point[0] + offset,
-            m.point[1]
-        ]));
-
-    L.polyline(progressPoints, {
-        color: color,
-        weight: 5,
-        opacity: 1.0
-    }).addTo(map);
-
-    // Sort swim data by date
+    // Sort swim data by date first
     swimData.sort((a, b) => {
         const dateA = parseDate(a[0]);
         const dateB = parseDate(b[0]);
         return dateA - dateB;
     });
 
-    // Calculate and plot cumulative progress points
+    // Calculate cumulative distances and create progress points
     let cumulativeMiles = 0;
+    const progressPoints = [];
     
+    // Always start from the first milestone
+    progressPoints.push([
+        canalMilestones[0].point[0],
+        canalMilestones[0].point[1] + offset // Add offset to longitude for east/west offset
+    ]);
+
+    // Add points for each swim
+    swimData.forEach(row => {
+        const miles = parseFloat(row[3]);
+        cumulativeMiles += miles;
+
+        // Find position along route for this cumulative distance
+        for (let i = 0; i < canalMilestones.length - 1; i++) {
+            const current = canalMilestones[i];
+            const next = canalMilestones[i + 1];
+            
+            if (cumulativeMiles >= current.mile && cumulativeMiles <= next.mile) {
+                const progress = (cumulativeMiles - current.mile) / (next.mile - current.mile);
+                const position = [
+                    current.point[0] + (next.point[0] - current.point[0]) * progress,
+                    current.point[1] + (next.point[1] - current.point[1]) * progress + offset
+                ];
+                progressPoints.push(position);
+                break;
+            }
+        }
+    });
+
+    // Draw the progress line
+    console.log(`Drawing ${name}'s line with ${progressPoints.length} points:`, progressPoints);
+    L.polyline(progressPoints, {
+        color: color,
+        weight: 5,
+        opacity: 1.0
+    }).addTo(map);
+
+    // Reset cumulative miles for marker placement
+    cumulativeMiles = 0;
+
+    // Add individual swim points
     swimData.forEach(row => {
         const miles = parseFloat(row[3]);
         cumulativeMiles += miles;
@@ -168,15 +198,6 @@ function updateSwimmerProgress(name, swimData, totalMiles, color, offset) {
         
         // Handle Strava link - ensure we're getting the full URL
         const stravaLink = row[6] ? row[6].trim() : '';
-        
-        console.log(`Processing swim for ${name}:`, {
-            date: dateStr,
-            parsedDate: date,
-            miles,
-            cumulativeMiles,
-            comment,
-            stravaLink
-        });
 
         // Find position along route for this swim
         for (let i = 0; i < canalMilestones.length - 1; i++) {
@@ -186,8 +207,8 @@ function updateSwimmerProgress(name, swimData, totalMiles, color, offset) {
             if (cumulativeMiles >= current.mile && cumulativeMiles <= next.mile) {
                 const progress = (cumulativeMiles - current.mile) / (next.mile - current.mile);
                 const position = [
-                    current.point[0] + (next.point[0] - current.point[0]) * progress + offset,
-                    current.point[1] + (next.point[1] - current.point[1]) * progress
+                    current.point[0] + (next.point[0] - current.point[0]) * progress,
+                    current.point[1] + (next.point[1] - current.point[1]) * progress + offset
                 ];
 
                 // Add marker with popup
@@ -211,7 +232,6 @@ function updateSwimmerProgress(name, swimData, totalMiles, color, offset) {
         }
     });
 }
-
 // Update statistics panel
 function updateStats(charlesMiles, hughMiles) {
     const statsPanel = document.getElementById('statsPanel');
