@@ -2,7 +2,7 @@
 const SHEET_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRv_tosp8If0B4UTn4jW9IPXrPF-ocF-9obdnn1D12_LDNvb23Dz56yZ9xZ43Wuj9azhc7SxcrLcOMX/pub?gid=0&single=true&output=csv';
 const CHARLES_COLOR = '#FF7000';
 const HUGH_COLOR = '#568203';
-const ROUTE_OFFSET = 0.002; // Reduced from 0.005 to keep lines in water
+const ROUTE_OFFSET = 0.002; // Reduced offset to keep lines in water
 
 // Canal route waypoints with verified coordinates and mile markers
 const canalMilestones = [
@@ -84,7 +84,7 @@ function updateMap() {
     fetch(SHEET_URL)
         .then(response => response.text())
         .then(data => {
-            const rows = data.split('\n').map(row => row.split(','));
+            const rows = data.split('\n').map(row => row.split('\t')); // Changed to tab separator
             processSwimmerData(rows);
             if (refreshButton) {
                 refreshButton.disabled = false;
@@ -116,9 +116,16 @@ function processSwimmerData(rows) {
     const charlesMiles = calculateTotalMiles(charlesData);
     const hughMiles = calculateTotalMiles(hughData);
     
+    console.log('Processing swimmer data:', {
+        charlesDataCount: charlesData.length,
+        hughDataCount: hughData.length,
+        charlesMiles,
+        hughMiles
+    });
+    
     // Update progress lines and markers for each swimmer
-    updateSwimmerProgress('Charles', charlesData, charlesMiles, CHARLES_COLOR, ROUTE_OFFSET); // East offset
-    updateSwimmerProgress('Hugh', hughData, hughMiles, HUGH_COLOR, -ROUTE_OFFSET); // West offset
+    updateSwimmerProgress('Charles', charlesData, charlesMiles, CHARLES_COLOR, ROUTE_OFFSET);
+    updateSwimmerProgress('Hugh', hughData, hughMiles, HUGH_COLOR, -ROUTE_OFFSET);
     
     // Update statistics panel
     updateStats(charlesMiles, hughMiles);
@@ -144,7 +151,7 @@ function updateSwimmerProgress(name, swimData, totalMiles, color, offset) {
     // Always start from the first milestone
     progressPoints.push([
         canalMilestones[0].point[0],
-        canalMilestones[0].point[1] + offset // Add offset to longitude for east/west offset
+        canalMilestones[0].point[1] + offset
     ]);
 
     // Add points for each swim
@@ -193,22 +200,23 @@ function updateSwimmerProgress(name, swimData, totalMiles, color, offset) {
             day: 'numeric'
         });
         
-        // Inside updateSwimmerProgress function, where we create the markers:
         // Handle multiline comments
         const comment = row[5] ? row[5]
-            .replace(/^"/, '') // Remove leading quote
-            .replace(/"$/, '') // Remove trailing quote
-            .split('\\n')      // Split on \n
-            .join('<br>')      // Join with HTML line breaks
+            .replace(/^"/, '')  // Remove leading quote
+            .replace(/"$/, '')  // Remove trailing quote
+            .replace(/\n/g, '<br>') // Replace actual newlines with <br>
             : '';
         
-        // Handle Strava link - ensure we're getting the full URL
-        const stravaLink = row[6] ? row[6].trim().replace(/^"/, '').replace(/"$/, '') : '';
-        
-        console.log('Processing swim data:', {
+        // Handle Strava link
+        const stravaLink = row[6] ? row[6].trim() : '';
+
+        console.log('Processing swim point:', {
             name,
+            date: dateStr,
+            parsedDate: date,
             comment,
-            stravaLink
+            stravaLink,
+            cumulativeMiles
         });
 
         // Find position along route for this swim
