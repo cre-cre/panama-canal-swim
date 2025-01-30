@@ -2,12 +2,12 @@
 const SHEET_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRv_tosp8If0B4UTn4jW9IPXrPF-ocF-9obdnn1D12_LDNvb23Dz56yZ9xZ43Wuj9azhc7SxcrLcOMX/pub?gid=0&single=true&output=csv';
 const CHARLES_COLOR = '#FF7000';
 const HUGH_COLOR = '#568203';
-const ROUTE_OFFSET = 0.002; // Reduced offset to keep lines in water
+const ROUTE_OFFSET = 0.0005; // Reduced offset to keep lines in water
 
 // Canal route waypoints with verified coordinates and mile markers
 const canalMilestones = [
     { point: [9.359167, -79.915833], mile: 0, name: "Atlantic Start", description: "Cristobal entrance" },
-    { point: [9.314444, -79.916389], mile: 4, name: "Gatun Approach", description: "Channel to locks" },
+    { point: [9.332507, -79.920307], mile: 4, name: "Gatun Approach", description: "Channel to locks" },
     { point: [9.273926, -79.922788], mile: 8, name: "Gatun Locks", description: "Triple flight of locks" },
     { point: [9.203805, -79.921681], mile: 12, name: "Lake Entry", description: "Gatun Lake" },
     { point: [9.182832, -79.844458], mile: 18, name: "Main Channel", description: "East of Barro Colorado" },
