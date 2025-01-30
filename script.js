@@ -62,4 +62,181 @@ function parseDate(dateStr) {
     if (dateStr.includes(' ')) {
         const [month, day] = dateStr.split(' ');
         const monthNum = new Date(Date.parse(month + " 1, 2000")).getMonth() + 1;
-        return new Date(2
+        return new Date(2025, monthNum - 1, parseInt(day));
+    }
+    // Handle dd/mm/yyyy format
+    const [day, month, year] = dateStr.split('/').map(num => parseInt(num, 10));
+    return new Date(year, month - 1, day);
+}
+
+// Function to update map data from Google Sheet
+function updateMap() {
+    const refreshButton = document.querySelector('.refresh-button');
+    if (refreshButton) {
+        refreshButton.disabled = true;
+        refreshButton.textContent = 'Refreshing...';
+    }
+
+    fetch(SHEET_URL)
+        .then(response => response.text())
+        .then(data => {
+            const rows = data.split('\n').map(row => row.split(','));
+            processSwimmerData(rows);
+            if (refreshButton) {
+                refreshButton.disabled = false;
+                refreshButton.textContent = 'Refresh Data';
+            }
+        });
+}
+
+// Process data for both swimmers
+function processSwimmerData(rows) {
+    // Remove header row and empty rows
+    const dataRows = rows.slice(1).filter(row => row.length > 1);
+    
+    // Clear existing progress lines and markers
+    map.eachLayer((layer) => {
+        if (layer instanceof L.Polyline && layer !== baseRoute) {
+            map.removeLayer(layer);
+        }
+        if (layer instanceof L.CircleMarker) {
+            map.removeLayer(layer);
+        }
+    });
+    
+    // Filter data for each swimmer
+    const charlesData = dataRows.filter(row => row[1].trim().toLowerCase() === 'charles');
+    const hughData = dataRows.filter(row => row[1].trim().toLowerCase() === 'hugh');
+    
+    // Calculate total miles for each swimmer
+    const charlesMiles = calculateTotalMiles(charlesData);
+    const hughMiles = calculateTotalMiles(hughData);
+    
+    // Update progress lines and markers for each swimmer
+    updateSwimmerProgress('Charles', charlesData, charlesMiles, CHARLES_COLOR, ROUTE_OFFSET);
+    updateSwimmerProgress('Hugh', hughData, hughMiles, HUGH_COLOR, -ROUTE_OFFSET);
+    
+    // Update statistics panel
+    updateStats(charlesMiles, hughMiles);
+}
+
+// Calculate total miles from swim data
+function calculateTotalMiles(swimmerData) {
+    return swimmerData.reduce((total, row) => total + parseFloat(row[3] || 0), 0);
+}
+
+// Update individual swimmer's progress on map
+function updateSwimmerProgress(name, swimData, totalMiles, color, offset) {
+    // Draw the progress line
+    const progressPoints = canalMilestones
+        .filter(m => m.mile <= totalMiles)
+        .map(m => ([
+            m.point[0] + offset,
+            m.point[1]
+        ]));
+
+    L.polyline(progressPoints, {
+        color: color,
+        weight: 5,
+        opacity: 1.0
+    }).addTo(map);
+
+    // Sort swim data by date
+    swimData.sort((a, b) => {
+        const dateA = parseDate(a[0]);
+        const dateB = parseDate(b[0]);
+        return dateA - dateB;
+    });
+
+    // Calculate and plot cumulative progress points
+    let cumulativeMiles = 0;
+    
+    swimData.forEach(row => {
+        const miles = parseFloat(row[3]);
+        cumulativeMiles += miles;
+        
+        const dateStr = row[0];
+        const date = parseDate(dateStr);
+        const formattedDate = date.toLocaleDateString('en-US', {
+            year: 'numeric',
+            month: 'short',
+            day: 'numeric'
+        });
+        
+        // Handle multiline comments - remove quotes and replace \n with <br>
+        const comment = row[5] ? row[5].replace(/"/g, '').replace(/\\n/g, '<br>') : '';
+        
+        // Handle Strava link - ensure we're getting the full URL
+        const stravaLink = row[6] ? row[6].trim() : '';
+        
+        console.log(`Processing swim for ${name}:`, {
+            date: dateStr,
+            parsedDate: date,
+            miles,
+            cumulativeMiles,
+            comment,
+            stravaLink
+        });
+
+        // Find position along route for this swim
+        for (let i = 0; i < canalMilestones.length - 1; i++) {
+            const current = canalMilestones[i];
+            const next = canalMilestones[i + 1];
+            
+            if (cumulativeMiles >= current.mile && cumulativeMiles <= next.mile) {
+                const progress = (cumulativeMiles - current.mile) / (next.mile - current.mile);
+                const position = [
+                    current.point[0] + (next.point[0] - current.point[0]) * progress + offset,
+                    current.point[1] + (next.point[1] - current.point[1]) * progress
+                ];
+
+                // Add marker with popup
+                L.circleMarker(position, {
+                    radius: 4,
+                    color: color,
+                    fillColor: color,
+                    fillOpacity: 0.8
+                })
+                .bindPopup(`
+                    <div class="swim-popup">
+                        <strong>${name} - ${formattedDate}</strong>
+                        <p>Distance: ${miles.toFixed(2)} miles</p>
+                        ${comment ? `<p>Comment: ${comment}</p>` : ''}
+                        ${stravaLink ? `<p><a href="${stravaLink}" target="_blank">View on Strava</a></p>` : ''}
+                    </div>
+                `)
+                .addTo(map);
+                break;
+            }
+        }
+    });
+}
+
+// Update statistics panel
+function updateStats(charlesMiles, hughMiles) {
+    const statsPanel = document.getElementById('statsPanel');
+    statsPanel.innerHTML = `
+        <div class="swimmer-card">
+            <h3 style="color:${CHARLES_COLOR}">Charles</h3>
+            <div class="progress-bar">
+                <div class="progress-fill" style="width:${(charlesMiles/50*100)}%;background:${CHARLES_COLOR}"></div>
+            </div>
+            <p>${charlesMiles.toFixed(2)} miles (${(charlesMiles/50*100).toFixed(1)}%)</p>
+        </div>
+        <div class="swimmer-card">
+            <h3 style="color:${HUGH_COLOR}">Hugh</h3>
+            <div class="progress-bar">
+                <div class="progress-fill" style="width:${(hughMiles/50*100)}%;background:${HUGH_COLOR}"></div>
+            </div>
+            <p>${hughMiles.toFixed(2)} miles (${(hughMiles/50*100).toFixed(1)}%)</p>
+        </div>
+        <button class="refresh-button" onclick="updateMap()">Refresh Data</button>
+        <div class="update-time">Last updated: ${new Date().toLocaleString()}</div>
+    `;
+}
+
+// Initial load
+updateMap();
+
+// Auto update every hour
+setInterval(updateMap, 3600000);
