@@ -55,7 +55,6 @@ canalMilestones.forEach(milestone => {
     `)
     .addTo(map);
 });
-
 // Helper function to parse dates
 function parseDate(dateStr) {
     try {
@@ -77,6 +76,54 @@ function parseDate(dateStr) {
     }
 }
 
+// Function to parse CSV data properly
+function parseCSV(text) {
+    const rows = [];
+    let row = [];
+    let field = '';
+    let inQuotes = false;
+
+    for (let i = 0; i < text.length; i++) {
+        const char = text[i];
+        const nextChar = text[i + 1];
+
+        if (char === '"') {
+            if (inQuotes && nextChar === '"') {
+                // Handle doubled quotes
+                field += '"';
+                i++;
+            } else {
+                // Toggle quote mode
+                inQuotes = !inQuotes;
+            }
+        } else if (char === ',' && !inQuotes) {
+            // End of field
+            row.push(field);
+            field = '';
+        } else if (char === '\n' && !inQuotes) {
+            // End of row
+            row.push(field);
+            if (row.some(field => field.trim() !== '')) {
+                rows.push(row);
+            }
+            row = [];
+            field = '';
+        } else if (char !== '\r') {
+            field += char;
+        }
+    }
+
+    // Handle the last field/row
+    if (field || row.length > 0) {
+        row.push(field);
+        if (row.some(field => field.trim() !== '')) {
+            rows.push(row);
+        }
+    }
+
+    return rows;
+}
+
 // Function to update map data from Google Sheet
 function updateMap() {
     console.log('Starting updateMap');
@@ -95,16 +142,9 @@ function updateMap() {
             return response.text();
         })
         .then(data => {
-            console.log('Raw data received:', data.substring(0, 200) + '...'); // Log first 200 chars
-            const rows = data.split('\n')
-                .map(row => {
-                    const columns = row.split('\t');
-                    console.log('Processed row:', columns);
-                    return columns;
-                })
-                .filter(row => row.length > 1);
-            
-            console.log('Processed rows:', rows);
+            console.log('Raw data received:', data.substring(0, 200) + '...');
+            const rows = parseCSV(data);
+            console.log('Parsed rows:', rows);
             processSwimmerData(rows);
             
             if (refreshButton) {
@@ -120,12 +160,11 @@ function updateMap() {
             }
         });
 }
-
 // Process data for both swimmers
 function processSwimmerData(rows) {
     console.log('Processing swimmer data - total rows:', rows.length);
     // Remove header row and empty rows
-    const dataRows = rows.slice(1).filter(row => row.length > 1);
+    const dataRows = rows.slice(1).filter(row => row.length > 1 && row[1]);
     console.log('Data rows after filtering:', dataRows);
     
     // Clear existing progress lines and markers
@@ -141,12 +180,12 @@ function processSwimmerData(rows) {
     // Filter data for each swimmer
     const charlesData = dataRows.filter(row => {
         const isCharles = row[1] && row[1].trim().toLowerCase() === 'charles';
-        console.log('Row check for Charles:', row[1], isCharles);
+        console.log('Row check for Charles:', row[1], isCharles, row);
         return isCharles;
     });
     const hughData = dataRows.filter(row => {
         const isHugh = row[1] && row[1].trim().toLowerCase() === 'hugh';
-        console.log('Row check for Hugh:', row[1], isHugh);
+        console.log('Row check for Hugh:', row[1], isHugh, row);
         return isHugh;
     });
 
@@ -221,7 +260,6 @@ function updateSwimmerProgress(name, swimData, totalMiles, color, offset) {
             }
         }
     });
-
     // Draw the progress line
     console.log(`Drawing ${name}'s line with ${progressPoints.length} points:`, progressPoints);
     L.polyline(progressPoints, {
@@ -246,15 +284,18 @@ function updateSwimmerProgress(name, swimData, totalMiles, color, offset) {
             day: 'numeric'
         });
         
-        // Handle multiline comments
-        const comment = row[5] ? row[5]
-            .replace(/^"/, '')  // Remove leading quote
-            .replace(/"$/, '')  // Remove trailing quote
-            .replace(/\n/g, '<br>') // Replace actual newlines with <br>
-            : '';
+        // Handle multiline comments - properly handle quotes and newlines
+        let comment = '';
+        if (row[5]) {
+            comment = row[5]
+                .replace(/^"/, '')     // Remove leading quote
+                .replace(/"$/, '')     // Remove trailing quote
+                .replace(/\\n/g, '<br>') // Replace \n with <br>
+                .replace(/\n/g, '<br>'); // Replace actual newlines with <br>
+        }
         
-        // Handle Strava link
-        const stravaLink = row[6] ? row[6].trim() : '';
+        // Handle Strava link - ensure we get the complete URL
+        const stravaLink = row[6] ? row[6].trim().replace(/^"/, '').replace(/"$/, '') : '';
 
         console.log('Processing swim point:', {
             name,
