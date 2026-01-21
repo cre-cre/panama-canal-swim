@@ -305,7 +305,7 @@ function updateSwimmerProgress(name, swimData, totalMiles, color, offset) {
             .replace(/^"/, '')     // Remove leading quote
             .replace(/"$/, '')     // Remove trailing quote
             .replace(/\\n/g, '<br>') // Replace \n with <br>
-            .replace(/\n/g, '<br>'); // Replace actual newlines with <br>
+            .replace(/\n/g, '<br>') // Replace actual newlines with <br>
         
         // Handle Strava link
         const stravaLink = row[6] ? row[6].trim().replace(/^"/, '').replace(/"$/, '') : '';
