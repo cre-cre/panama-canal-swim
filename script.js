@@ -1,13 +1,14 @@
 // Configuration Constants
 const SHEET_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRv_tosp8If0B4UTn4jW9IPXrPF-ocF-9obdnn1D12_LDNvb23Dz56yZ9xZ43Wuj9azhc7SxcrLcOMX/pub?gid=0&single=true&output=csv';
-const CHARLES_COLOR = '#FF7000';
+const CHARLES_2025_COLOR = '#FF7000';
+const CHARLES_2026_COLOR = '#FF0000';
 const HUGH_COLOR = '#568203';
-const ROUTE_OFFSET = 0.0005; // Reduced offset to keep lines in water
+const ROUTE_OFFSET = 0.002; // Reduced offset to keep lines in water
 
 // Canal route waypoints with verified coordinates and mile markers
 const canalMilestones = [
     { point: [9.359167, -79.915833], mile: 0, name: "Atlantic Start", description: "Cristobal entrance" },
-    { point: [9.332507, -79.920307], mile: 4, name: "Gatun Approach", description: "Channel to locks" },
+    { point: [9.314444, -79.916389], mile: 4, name: "Gatun Approach", description: "Channel to locks" },
     { point: [9.273926, -79.922788], mile: 8, name: "Gatun Locks", description: "Triple flight of locks" },
     { point: [9.203805, -79.921681], mile: 12, name: "Lake Entry", description: "Gatun Lake" },
     { point: [9.182832, -79.844458], mile: 18, name: "Main Channel", description: "East of Barro Colorado" },
@@ -55,6 +56,7 @@ canalMilestones.forEach(milestone => {
     `)
     .addTo(map);
 });
+
 // Helper function to parse dates
 function parseDate(dateStr) {
     try {
@@ -160,7 +162,8 @@ function updateMap() {
             }
         });
 }
-// Process data for both swimmers
+
+// Process data for all swimmers
 function processSwimmerData(rows) {
     console.log('Processing swimmer data - total rows:', rows.length);
     // Remove header row and empty rows
@@ -178,10 +181,15 @@ function processSwimmerData(rows) {
     });
     
     // Filter data for each swimmer
-    const charlesData = dataRows.filter(row => {
-        const isCharles = row[1] && row[1].trim().toLowerCase() === 'charles';
-        console.log('Row check for Charles:', row[1], isCharles, row);
-        return isCharles;
+    const charles2025Data = dataRows.filter(row => {
+        const isCharles2025 = row[1] && row[1].trim().toLowerCase() === 'charles 2025';
+        console.log('Row check for Charles 2025:', row[1], isCharles2025, row);
+        return isCharles2025;
+    });
+    const charles2026Data = dataRows.filter(row => {
+        const isCharles2026 = row[1] && row[1].trim().toLowerCase() === 'charles 2026';
+        console.log('Row check for Charles 2026:', row[1], isCharles2026, row);
+        return isCharles2026;
     });
     const hughData = dataRows.filter(row => {
         const isHugh = row[1] && row[1].trim().toLowerCase() === 'hugh';
@@ -189,21 +197,28 @@ function processSwimmerData(rows) {
         return isHugh;
     });
 
-    console.log('Charles data:', charlesData);
+    console.log('Charles 2025 data:', charles2025Data);
+    console.log('Charles 2026 data:', charles2026Data);
     console.log('Hugh data:', hughData);
     
     // Calculate total miles for each swimmer
-    const charlesMiles = calculateTotalMiles(charlesData);
+    const charles2025Miles = calculateTotalMiles(charles2025Data);
+    const charles2026Miles = calculateTotalMiles(charles2026Data);
     const hughMiles = calculateTotalMiles(hughData);
     
-    console.log('Calculated miles:', { charles: charlesMiles, hugh: hughMiles });
+    console.log('Calculated miles:', {
+        charles2025: charles2025Miles,
+        charles2026: charles2026Miles,
+        hugh: hughMiles
+    });
     
     // Update progress lines and markers for each swimmer
-    updateSwimmerProgress('Charles', charlesData, charlesMiles, CHARLES_COLOR, ROUTE_OFFSET);
+    updateSwimmerProgress('Charles 2025', charles2025Data, charles2025Miles, CHARLES_2025_COLOR, ROUTE_OFFSET);
+    updateSwimmerProgress('Charles 2026', charles2026Data, charles2026Miles, CHARLES_2026_COLOR, ROUTE_OFFSET * 2);
     updateSwimmerProgress('Hugh', hughData, hughMiles, HUGH_COLOR, -ROUTE_OFFSET);
     
     // Update statistics panel
-    updateStats(charlesMiles, hughMiles);
+    updateStats(charles2025Miles, charles2026Miles, hughMiles);
 }
 
 // Calculate total miles from swim data
@@ -260,6 +275,7 @@ function updateSwimmerProgress(name, swimData, totalMiles, color, offset) {
             }
         }
     });
+
     // Draw the progress line
     console.log(`Drawing ${name}'s line with ${progressPoints.length} points:`, progressPoints);
     L.polyline(progressPoints, {
@@ -284,17 +300,14 @@ function updateSwimmerProgress(name, swimData, totalMiles, color, offset) {
             day: 'numeric'
         });
         
-        // Handle multiline comments - properly handle quotes and newlines
-        let comment = '';
-        if (row[5]) {
-            comment = row[5]
-                .replace(/^"/, '')     // Remove leading quote
-                .replace(/"$/, '')     // Remove trailing quote
-                .replace(/\\n/g, '<br>') // Replace \n with <br>
-                .replace(/\n/g, '<br>'); // Replace actual newlines with <br>
-        }
+        // Handle multiline comments
+        const comment = row[5] ? row[5]
+            .replace(/^"/, '')     // Remove leading quote
+            .replace(/"$/, '')     // Remove trailing quote
+            .replace(/\\n/g, '<br>') // Replace \n with <br>
+            .replace(/\n/g, '<br>'); // Replace actual newlines with <br>
         
-        // Handle Strava link - ensure we get the complete URL
+        // Handle Strava link
         const stravaLink = row[6] ? row[6].trim().replace(/^"/, '').replace(/"$/, '') : '';
 
         console.log('Processing swim point:', {
@@ -341,15 +354,22 @@ function updateSwimmerProgress(name, swimData, totalMiles, color, offset) {
 }
 
 // Update statistics panel
-function updateStats(charlesMiles, hughMiles) {
+function updateStats(charles2025Miles, charles2026Miles, hughMiles) {
     const statsPanel = document.getElementById('statsPanel');
     statsPanel.innerHTML = `
         <div class="swimmer-card">
-            <h3 style="color:${CHARLES_COLOR}">Charles</h3>
+            <h3 style="color:${CHARLES_2025_COLOR}">Charles 2025</h3>
             <div class="progress-bar">
-                <div class="progress-fill" style="width:${(charlesMiles/50*100)}%;background:${CHARLES_COLOR}"></div>
+                <div class="progress-fill" style="width:${(charles2025Miles/50*100)}%;background:${CHARLES_2025_COLOR}"></div>
             </div>
-            <p>${charlesMiles.toFixed(2)} miles (${(charlesMiles/50*100).toFixed(1)}%)</p>
+            <p>${charles2025Miles.toFixed(2)} miles (${(charles2025Miles/50*100).toFixed(1)}%)</p>
+        </div>
+        <div class="swimmer-card">
+            <h3 style="color:${CHARLES_2026_COLOR}">Charles 2026</h3>
+            <div class="progress-bar">
+                <div class="progress-fill" style="width:${(charles2026Miles/50*100)}%;background:${CHARLES_2026_COLOR}"></div>
+            </div>
+            <p>${charles2026Miles.toFixed(2)} miles (${(charles2026Miles/50*100).toFixed(1)}%)</p>
         </div>
         <div class="swimmer-card">
             <h3 style="color:${HUGH_COLOR}">Hugh</h3>
